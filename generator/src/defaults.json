@@ -1,0 +1,13 @@
+{
+  "qualityBoost": "Off (default)",
+  "numImages": "3 (default)",
+  "artStyle": "No style (default)",
+  "shape": "Square (768x768px) (default)",
+  "Gscale": "12 (default)",
+  "steps": "20 (default)",
+  "colorScheme": "Dark",
+  "prePrompt": "",
+  "description": "",
+  "postPrompt": "",
+  "negative": ""
+}

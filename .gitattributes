@@ -1,0 +1,11 @@
+# Normalize every text file to LF, regardless of what line ending it has on whatever machine last touched it.
+# This repo has no core.autocrlf set, so WSL/Windows tooling can flip a file to CRLF on disk while git's stored
+# blob stays LF; git status then shows a false "modified" even though the content is byte-identical. See CLAUDE.md.
+* text=auto eol=lf
+
+# Genuinely binary — never touched by the text normalization above.
+*.webp binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.woff2 binary
