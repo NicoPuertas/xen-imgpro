@@ -24,7 +24,7 @@ Edit here, then hand-upload to Perchance. Layout mirrors `xen-rpgengine`.
 
 ## Push (local -> Perchance)
 1. Check for remote edits first: `python3 -I tools/pull.py --dest <scratch dir>` then `python3 -I tools/compare.py <scratch dir>`.
-2. Add an entry to the `## Changelog` section at the bottom of `generator/src/README.md` (it is the required trigger file of every push).
+2. Bump `generator/src/VERSION.json` (`version` + `lastEdit` from `date -u +%FT%T.000Z`) and add a `## [X.Y.Z] - YYYY-MM-DD UTC` entry at the top of `generator/src/CHANGELOG.md` (the required trigger file of every push; `make_upload.py` checks both agree and the version is newer than the server's). The footer of the generator shows the version and opens the changelog (`lib/ui/version-footer.js`).
 3. `python3 -I tools/make_upload.py` (`--list` previews). It reads Perchance LIVE and refuses to build unless the server matches `manifest.json`/baseline; then it verifies the embedded files against the disk, runs `node --check` and `node tools/console/test_upload.mjs`. Output: `tools/console/out/push.js` (gitignored).
 4. The user opens that file, copies it, and pastes it into the DevTools console of the Perchance editor (context `top`, logged in). It uploads, saves, verifies twice and reloads. Claude cannot upload (needs the user's browser session).
 5. After it succeeds: `python3 -I tools/pull.py --dest <dir>`, `compare.py` (all SAME-BOTH), then `python3 -I tools/pull.py --force` to reset the baseline, and commit.

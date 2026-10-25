@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GEN = os.path.abspath(os.path.join(HERE, "..", "generator"))
 OUT = os.path.join(HERE, "console", "out")
 TEMPLATE = os.path.join(HERE, "console", "upload.template.js")
-EDITED_PATH = "README.md"  # required member of every release slice (its "Changelog" section); also the manual-fallback trigger
+EDITED_PATH = "CHANGELOG.md"  # required member of every release slice; also the manual-fallback trigger. Until the server has it (first upload) README.md stands in.
 
 
 def sha256(b):
@@ -42,6 +42,7 @@ def main():
 
     base = json.load(open(os.path.join(GEN, "baseline.json")))
     manifest = json.load(open(os.path.join(GEN, "manifest.json")))
+    edited = EDITED_PATH if EDITED_PATH in manifest else "README.md"
     now = scan()
     files = []
     for rel in sorted(set(base) | set(now)):
@@ -81,9 +82,9 @@ def main():
     for f in files:
         tag = "DELETE" if f["deleted"] else ("NEW" if f["kind"] == "src" and not f["expectKey"] else "MODIFY")
         print(f"  {tag:7} {f['kind']:8} {f['path']}  ({f['size']} bytes)")
-    if not any(f["path"] == EDITED_PATH and not f["deleted"] for f in files):
-        sys.exit(f"{EDITED_PATH} is not in the change set; every release adds an entry to the "
-                 f"Changelog section at the bottom of src/README.md - add it first")
+    if not any(f["path"] == edited and not f["deleted"] for f in files):
+        sys.exit(f"{edited} is not in the change set; every release adds an entry to src/CHANGELOG.md "
+                 f"and bumps src/VERSION.json - do that first")
     if a.list:
         return
 
@@ -95,12 +96,14 @@ def main():
     spec.loader.exec_module(pre)
     pushed = {("model.txt" if f["kind"] == "model" else "output-template.html" if f["kind"] == "template" else "src/" + f["path"]) for f in files}
     unchanged = {rel[4:]: os.path.getsize(os.path.join(GEN, *rel.split("/"))) for rel in now if rel.startswith("src/") and rel not in pushed}
+    version_text = open(os.path.join(GEN, "src", "VERSION.json"), encoding="utf-8").read()
+    changelog_text = open(os.path.join(GEN, "src", "CHANGELOG.md"), encoding="utf-8").read()
     if a.offline:
         print("\n!! --offline: NOT checked against Perchance. Do not trust this script until a normal run passes.")
     else:
         print("\nchecking against Perchance (live)...")
         live = pre.read_live("xen-imgpro4")
-        bad = pre.problems(live, manifest, base, files, unchanged)
+        bad = pre.problems(live, manifest, base, files, unchanged, version_text, changelog_text)
         if bad:
             sys.exit("\nPUSH NOT BUILT - the baseline no longer matches Perchance, or the release is inconsistent:\n  - " + "\n  - ".join(bad)
                      + "\n\nPull + compare first (python3 -I tools/pull.py --dest DIR; python3 -I tools/compare.py DIR), merge, reset baseline/manifest, then rebuild.")
@@ -109,7 +112,7 @@ def main():
         if by_hand:
             print("  NOT on Perchance yet (upload by hand, they are not in push.js):\n    " + "\n    ".join(by_hand))
 
-    plan = {"generator": "xen-imgpro4", "editedPath": EDITED_PATH, "baselineManifestCount": len(manifest), "files": files}
+    plan = {"generator": "xen-imgpro4", "editedPath": edited, "baselineManifestCount": len(manifest), "files": files}
     js = open(TEMPLATE, encoding="utf-8").read().replace("/*PLAN*/null", json.dumps(plan, separators=(",", ":")), 1)
     # Pure ASCII so the console can never garble it.
     js = js.replace("\u2014", "-").replace("\u2192", "->").replace("\u2714", "OK")
@@ -129,7 +132,7 @@ def main():
     for cmd in (["node", "--check", path], ["node", os.path.join(HERE, "console", "test_upload.mjs")]):
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0 or (cmd[1].endswith(".mjs") and "all passed" not in r.stdout):
-            bad.append(" ".join(os.path.basename(c) for c in cmd) + " failed:\n" + (r.stdout + r.stderr)[-600:])
+            bad.append(" ".join(os.path.basename(c) for c in cmd) + " failed:\n" + "\n".join(l for l in (r.stdout + r.stderr).splitlines() if not l.startswith("PASS"))[-1500:])
     if bad:
         os.remove(path)
         sys.exit("\nPUSH NOT BUILT (post-build check):\n  - " + "\n  - ".join(bad))

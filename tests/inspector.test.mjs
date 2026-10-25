@@ -45,7 +45,7 @@ test("stops at first accepted try, same seed, keeps best", async () => {
   assert.equal(JSON.stringify(ctx.window.__gens), "[777,777]");
   assert.equal(run.winner, 2);
   assert.equal(run.stoppedEarly, true);
-  assert.equal(run.attempts[0].dataUrl, null);
+  assert.ok(run.attempts[0].dataUrl, "every try keeps its full-size image");
   assert.ok(run.attempts[2].dataUrl);
 });
 
@@ -149,4 +149,19 @@ test("hand tier parsing", () => {
   assert.equal(t("left hand: 6 digits, merged/blob-like"), 2);
   assert.equal(t("a", "left hand has extra digits and distorted anatomy"), 2);
   assert.equal(t("left hand: 5 digits, normal", "distorted face"), 0);
+});
+
+test("a try can be picked afterwards; failed tries cannot", async () => {
+  const { ctx, ctn } = sandbox({ scores: ["4|extra finger|right hand: 6 digits", "9|none visible"] });
+  ctn.querySelector = iframeStub();
+  await ctx.window.__run(ctn, { dataUrl: "data:image/png;base64,F", seedUsed: 9 }, 3);
+  const run = ctn.__inspRun;
+  assert.equal(run.winner, 1);
+  assert.equal(ctx.window.proInspector.select(ctn, 0), true);
+  assert.equal(run.winner, 0);
+  assert.equal(run.attempts.map((a) => a.selected).join(), "true,false");
+  assert.equal(run.autoWinner, 1);
+  assert.equal(ctx.window.proInspector.select(ctn, 5), false);
+  run.running = true;
+  assert.equal(ctx.window.proInspector.select(ctn, 1), false, "not while a run is going");
 });

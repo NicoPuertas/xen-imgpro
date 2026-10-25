@@ -15,7 +15,7 @@
   var INSP_ACCEPT_SCORE = 8;
   var INSP_GEN_TIMEOUT_MS = 150000;
   var INSP_JUDGE_TIMEOUT_MS = 90000;
-  var INSP_THUMB_PX = 320;
+  var INSP_THUMB_PX = 512; // grid thumbnails; every try also keeps its full-size image for the viewer
 
   function inspTimeout(promise, ms, message) {
     let timer = null;
@@ -90,7 +90,7 @@
           c.width = Math.max(1, Math.round(img.width * scale));
           c.height = Math.max(1, Math.round(img.height * scale));
           c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-          resolve(c.toDataURL('image/jpeg', 0.8));
+          resolve(c.toDataURL('image/jpeg', 0.85));
         } catch(e) { resolve(dataUrl); }
       };
       img.onerror = () => resolve(dataUrl);
@@ -298,9 +298,15 @@
   function inspFinish(ctn, run) {
     let ifr = ctn.querySelector('iframe');
     let host = inspHost(ctn);
-    ctn.querySelectorAll('.insp-strip').forEach(el => el.remove());
+    // Re-callable (the viewer can switch the shown try): drop the previous swap and chip, show the iframe to measure it.
+    ctn.querySelectorAll('.insp-strip, .insp-winner, .insp-chip').forEach(el => el.remove());
+    if(ifr) ifr.style.display = '';
     if(!ifr || !host) return;
     let win = run.attempts[run.winner];
+    if(win && win.dataUrl) {
+      let out0 = ifr.textToImagePluginOutput;
+      if(out0) out0.dataUrl = win.dataUrl; // whatever reads the frame's image (save, vary, copy) now sees the shown try
+    }
     if(win && run.winner > 0 && win.dataUrl) {
       // Show the winning retry in place of the framework's iframe (which stays
       // in the DOM, hidden: the other buttons read its seed/output).
@@ -317,7 +323,7 @@
       let inputs = (out && out.inputs) || { prompt: run.prompt, negativePrompt: run.negative, seed: run.seed, guidanceScale: run.base.guidanceScale };
       // A retry painted with the hand-boost wording is saved with the prompt that actually made it.
       if(win.promptUsed) inputs = Object.assign({}, inputs, { prompt: win.promptUsed, negativePrompt: win.negativeUsed });
-      if(out) out.dataUrl = win.dataUrl; else ifr.textToImagePluginOutput = { dataUrl: win.dataUrl, inputs: inputs };
+      if(!out) ifr.textToImagePluginOutput = { dataUrl: win.dataUrl, inputs: inputs };
       let saveBtn = makeSaveButton(async () => { await saveToGalleryWithFly(win.dataUrl, inputs, wrap); });
       saveBtn.style.opacity = '0.4';
       wrap.appendChild(saveBtn);
@@ -333,6 +339,19 @@
     chip.title = 'Review the retries of this image';
     chip.onclick = () => openInspectorAttempts(ctn);
     host.appendChild(chip);
+  }
+
+  // Show another try of this frame (picked in the viewer). Needs the run to be finished and the try to have an image.
+  function inspSelectAttempt(ctn, idx) {
+    let run = ctn && ctn.__inspRun;
+    let a = run && run.attempts[idx];
+    if(!run || run.running || !a || !a.dataUrl) return false;
+    run.attempts.forEach(x => { x.selected = false; });
+    a.selected = true;
+    run.winner = idx;
+    inspFinish(ctn, run);
+    inspNotify(run);
+    return true;
   }
 
   // ---------- the run ----------
@@ -410,12 +429,7 @@
       let isBest = !prev || typeof prev.score !== 'number' || inspRank(a) > inspRank(prev);
       a.thumb = await inspThumb(a.dataUrl);
       if(!live()) return;
-      if(isBest) {
-        if(prev) prev.dataUrl = null; // discard the previous best's full image
-        bestIdx = n - 1;
-      } else {
-        a.dataUrl = null; // worse than the one we keep: thumbnail only
-      }
+      if(isBest) bestIdx = n - 1; // every try keeps its full-size image so any of them can be shown or reviewed
       inspUpdateStrip(ctn, run, 'Try ' + n + '/' + passes + ' · ' + a.score + '/10 ' + (a.status === 'accepted' ? 'accepted' : 'rejected'), inspFrac(n, passes, 'done'));
       inspNotify(run);
       if(a.status === 'accepted') { run.stoppedEarly = n < passes; break; }
@@ -423,6 +437,7 @@
 
     run.running = false;
     run.winner = bestIdx;
+    run.autoWinner = bestIdx;
     if(bestIdx >= 0) run.attempts[bestIdx].selected = true;
     if(bestIdx < 0) run.note = run.note || 'No try produced an image.';
     inspFinish(ctn, run);
@@ -454,4 +469,4 @@
     inspRun(ctn, m, passes).catch(e => console.error('image inspector run:', e));
   });
 
-  window.proInspector = { INSP_MAX: INSP_MAX, INSP_ACCEPT_SCORE: INSP_ACCEPT_SCORE, readPasses: inspReadPasses };
+  window.proInspector = { select: inspSelectAttempt, INSP_MAX: INSP_MAX, INSP_ACCEPT_SCORE: INSP_ACCEPT_SCORE, readPasses: inspReadPasses };

@@ -142,7 +142,7 @@ function makeEnv(liveManifest, opts = {}) {
   // shape: "inner" = full manifest inside generator; "delta" = real editor shape (top-level, changes only, inner empty); "topfull" = top-level full
   const body = (shape = "inner") => {
     const b = { email: "user@example.invalid", sessionToken: "SECRET-TOKEN-123", generator: { name: "xen-imgpro4", modelText, outputTemplate: template, srcManifest: shape === "inner" ? liveManifest : {} }, lastKnownSaveCount: 123, editorClientId: "x" };
-    if (shape === "delta") b.srcManifest = { "README.md": { key: "0".repeat(32) + ".txt", size: 12606 } };
+    if (shape === "delta") b.srcManifest = { [PLAN.editedPath]: { key: "0".repeat(32) + ".txt", size: 12606 } };
     if (shape === "topfull") b.srcManifest = liveManifest;
     return JSON.stringify(b);
   };

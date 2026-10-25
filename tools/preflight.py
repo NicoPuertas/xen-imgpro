@@ -9,9 +9,10 @@ matched Perchance. These checks read Perchance LIVE and refuse to build unless:
 Any failure exits non-zero and removes the old push.js, so a stale script can never be pasted by mistake.
 Usage (normally through make_upload.py):  python3 -I tools/preflight.py --selftest
 """
-import base64, hashlib, json, re, sys, time, urllib.request
+import base64, datetime, hashlib, json, re, sys, time, urllib.request
 
 UA = {"User-Agent": "Mozilla/5.0"}
+SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 
 def fetch(url, attempts=4):
@@ -35,10 +36,21 @@ def read_live(generator):
     line = next(l for l in html.split("\n") if l.startswith('<script id="preloaded-generator-data"'))
     d = json.loads(re.match(r'<script id="preloaded-generator-data" type="notjs">(.*)</script>\s*$', line, re.S).group(1))
     man = d["srcManifest"]
-    return {"model": d["modelText"], "template": d["outputTemplate"], "manifest": man}
+    ver = man.get("VERSION.json")
+    return {"model": d["modelText"], "template": d["outputTemplate"], "manifest": man,
+            "version_text": fetch("https://user.uploads.dev/file/" + ver["key"]).decode("utf-8") if ver else None}
 
 
-def problems(live, local_manifest, base, files, unchanged_sizes):
+def parse_version(text):
+    v = json.loads(text)
+    m = SEMVER.match(str(v.get("version", "")))
+    if not m:
+        raise ValueError("VERSION.json has no valid MAJOR.MINOR.PATCH version")
+    when = datetime.datetime.strptime(v["lastEdit"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)
+    return tuple(int(x) for x in m.groups()), v["version"], when
+
+
+def problems(live, local_manifest, base, files, unchanged_sizes, version_text=None, changelog_text=None, now=None):
     """Pure: every reason this push must not be built. live = read_live(); files = the plan's file entries;
     unchanged_sizes = {path: size} of local files that are NOT being pushed."""
     bad = []
@@ -67,6 +79,28 @@ def problems(live, local_manifest, base, files, unchanged_sizes):
     for p, size in unchanged_sizes.items():
         if p in srv and srv[p].get("size") not in (None, size):
             bad.append(f"{p}: {size} bytes locally, {srv[p]['size']} on Perchance, yet not in the change set (baseline.json is wrong)")
+    # 4. version and changelog agree, and move forward (skipped when no version text is given)
+    if version_text is not None:
+        try:
+            num, name, when = parse_version(version_text)
+            now = now or datetime.datetime.now(datetime.timezone.utc)
+            if when > now + datetime.timedelta(minutes=5):
+                bad.append(f"VERSION.json lastEdit {when.isoformat()} is in the future")
+            if live.get("version_text"):
+                rnum, rname, rwhen = parse_version(live["version_text"])
+                if num <= rnum:
+                    bad.append(f"VERSION.json {name} is not newer than the {rname} on Perchance")
+                if when < rwhen:
+                    bad.append(f"VERSION.json lastEdit {when.isoformat()} is older than Perchance's {rwhen.isoformat()}")
+            head = re.search(r"^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2}) UTC", changelog_text or "", re.M)
+            if not head:
+                bad.append("CHANGELOG.md has no '## [X.Y.Z] - date UTC' entry")
+            elif head.group(1) != name:
+                bad.append(f"CHANGELOG.md's newest entry is {head.group(1)} but VERSION.json says {name}")
+        except (ValueError, KeyError) as e:
+            bad.append("VERSION.json is unreadable: " + str(e))
+        if not any(f["path"] == "VERSION.json" and not f["deleted"] for f in files):
+            bad.append("VERSION.json is not in the change set (every release bumps it)")
     return bad
 
 
@@ -110,6 +144,20 @@ def selftest():
         "NEW but present": ok(files=[{**files[0], "expectKey": None}]),
         "baseline lies": ok(sizes={"x.js": 4}),
     }
+    now = datetime.datetime(2026, 10, 25, 12, 0, tzinfo=datetime.timezone.utc)
+    ver = lambda v, t: json.dumps({"lastEdit": t, "version": v})
+    vfiles = files + [{"kind": "src", "path": "VERSION.json", "deleted": False, "expectKey": None}]
+    vlive = {**live, "version_text": ver("1.0.0", "2026-10-25T08:00:00.000Z")}
+    vok = lambda **kw: problems(kw.get("live", vlive), local, base, kw.get("files", vfiles), {"x.js": 3},
+                                kw.get("ver", ver("1.1.0", "2026-10-25T09:00:00.000Z")), kw.get("log", "## [1.1.0] - 2026-10-25 UTC\n"), now)
+    assert vok() == [], vok()
+    cases.update({
+        "version not newer": vok(ver=ver("1.0.0", "2026-10-25T09:00:00.000Z"), log="## [1.0.0] - 2026-10-25 UTC\n"),
+        "date in the future": vok(ver=ver("1.1.0", "2026-10-26T09:00:00.000Z")),
+        "changelog behind": vok(log="## [1.0.0] - 2026-10-25 UTC\n"),
+        "bad version": vok(ver='{"version":"x","lastEdit":"2026-10-25T09:00:00.000Z"}'),
+        "no version file": vok(files=files),
+    })
     for name, got in cases.items():
         assert got, "not caught: " + name
     data = b"hello"
