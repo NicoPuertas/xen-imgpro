@@ -5,6 +5,7 @@
   "shape": "Square (768x768px) (default)",
   "Gscale": "12 (default)",
   "steps": "20 (default)",
+  "passes": "1 (default)",
   "colorScheme": "Dark",
   "prePrompt": "",
   "description": "",

@@ -127,7 +127,7 @@
       window.__proModalEsc = true;
       document.addEventListener('keydown', (e) => {
         if(e.key !== 'Escape') return;
-        for(let id of ['vary-modal-ctn', 'style-compare-modal-ctn']) {
+        for(let id of ['vary-modal-ctn', 'style-compare-modal-ctn', 'insp-attempts-modal-ctn']) {
           let b = document.getElementById(id);
           if(b && b.isConnected && b.__proDismiss) { b.__proDismiss(); break; }
         }

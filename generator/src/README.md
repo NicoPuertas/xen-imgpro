@@ -81,6 +81,19 @@ the `<script>` blocks of `index.html`.
 - `src/lib/modals/style-compare.js` — `getStyleTemplates`, `evalStyleStyles`,
   `openStyleCompareModal`, `showStyleCompareReopenButton` (stash also
   file-scoped).
+- `src/lib/inspector/passes.js` — AI image inspector ("Retries" dropdown,
+  `userInputs.passes`, 1-10, default 1 = off, frames untouched). On a frame's
+  `finished` message it captures the seed, scores the image with
+  `root.aiTextPlugin` (imported in `model.txt`; negative prompt = checklist,
+  anatomy rubric always on) and, while the score is under 8, regenerates with
+  the SAME seed in a hidden embed iframe, up to N tries. Best try stays on
+  screen (a retry winner replaces the framework iframe with an `<img>` + save
+  button; the iframe stays in the DOM, hidden, because the other buttons read
+  it). Worse tries keep only a 320px thumbnail on `ctn.__inspRun`. Progress
+  strip + chip on the frame. Inspector failure stops retrying (no blind spend).
+- `src/lib/inspector/attempts-modal.js` — `openInspectorAttempts(ctn)`: per-try
+  thumbnail, ACCEPTED/REJECTED/FAILED/UNJUDGED, score, defects, seed, time, and
+  which try was kept. Opened by the 🔍 button / chip; live-updates during a run.
 - `src/lib/gallery/dock.js` — bottom-center dock (`window.__refreshBottomDock`). Hides
   the docked gallery button while `#localMediaGallery_root` is open (it has
   its own close button) and adds 24px bottom padding to the gallery grid.
