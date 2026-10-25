@@ -205,3 +205,9 @@ Notes for future work:
 - `numImages`/`Gscale`/`steps` option lists are explicit (curated values,
   not ranges): the framework iterates option children, so a `{1-30}`
   shorthand would be a single option, not 30. Keep them literal.
+
+## Changelog
+
+One entry per upload to Perchance (newest first). `tools/make_upload.py` refuses to build unless this file changed.
+
+- 2026-10-25 UTC — AI image inspector: "Retries" dropdown (1-10, same seed), vision-model scoring, per-frame attempts viewer (`lib/inspector/`).

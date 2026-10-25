@@ -5,3 +5,4 @@ Thumbs.db
 
 # Claude Code per-machine permissions (personal, never shared)
 .claude/settings.local.json
+tools/console/out/
