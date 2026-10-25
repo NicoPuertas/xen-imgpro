@@ -211,3 +211,4 @@ Notes for future work:
 One entry per upload to Perchance (newest first). `tools/make_upload.py` refuses to build unless this file changed.
 
 - 2026-10-25 UTC — AI image inspector: "Retries" dropdown (1-10, same seed), vision-model scoring, per-frame attempts viewer (`lib/inspector/`).
+- 2026-10-25 UTC — Inspector: stricter judging. The judge now lists every hand and its digit count first; code overrides the score when it reports a wrong count or fused/extra fingers; a try is accepted only with score >= 8 AND no listed defects; accepted candidates get a hands-only second opinion.

@@ -47,6 +47,38 @@
     return Math.min(1, ((n - 1) + part) / Math.max(1, max));
   }
 
+  // Second opinion, run only on a try that would be accepted: a hands-only specialist prompt.
+  // Returns a problem string, or '' (also '' if the check itself fails: the main verdict stands).
+  async function inspHandsCheck(dataUrl) {
+    try {
+      if(typeof root === 'undefined' || !root.aiTextPlugin) return '';
+      let blob = await (await fetch(dataUrl)).blob();
+      let instruction = 'You inspect AI-painted images for ONE thing: hands. Look at every visible hand. For each, count the digits one by one (four fingers plus the thumb = 5) and check that none is fused, merged, doubled, bent the wrong way, twisted, blob-like, or the wrong length. Hands cut off by the frame edge or fully hidden are NOT problems.\n'
+        + 'Reply in exactly this format:\nHANDS: <for each visible hand: "left/right hand: N digits, normal" or the problem; or "none visible">\nVERDICT: <OK if every visible hand is normal or no hand is visible, otherwise BAD>';
+      let res = await inspTimeout(root.aiTextPlugin({ instruction: [instruction, blob], startWith: 'HANDS:' }), INSP_JUDGE_TIMEOUT_MS, 'Hands check timed out.');
+      let text = String(res && res.text != null ? res.text : res);
+      let handsLine = (text.match(/^\s*([^\n]*)/) || [, ''])[1];
+      let problem = inspHandsProblem(handsLine);
+      if(problem) return problem;
+      if(/VERDICT:\s*BAD/i.test(text)) return 'hands check: ' + (handsLine.trim().slice(0, 120) || 'BAD');
+      return '';
+    } catch(e) {
+      console.error('hands check:', e);
+      return '';
+    }
+  }
+
+  // True when the judge listed no defects ("none visible", "none", empty).
+  function inspIsClean(defects) {
+    let d = String(defects == null ? '' : defects).trim().toLowerCase().replace(/[."']/g, '');
+    return d === '' || /^(none|no defects?|nothing)( visible| found| detected)?$/.test(d);
+  }
+
+  // Ordering of tries: score first, a defect-free verdict breaks ties.
+  function inspRank(a) {
+    return a.score * 2 + (a.clean ? 1 : 0);
+  }
+
   function inspThumb(dataUrl) {
     return new Promise((resolve) => {
       let img = new Image();
@@ -65,6 +97,30 @@
     });
   }
 
+  var INSP_BAD_WORDS = '(extra|six|seven|eight|fused|merged|webbed|missing|malformed|deformed|distorted|mangled|twisted|blob|claw|stump|too long|too short|too many|too few|wrong|unnatural|impossible|asymmetric|melted)';
+
+  // Problem text found in the judge's HANDS line (digit counts other than 5, or bad words), or ''.
+  function inspHandsProblem(line) {
+    let t = String(line || '').replace(/^\s*hands:\s*/i, '').trim();
+    if(!t || /^(none|no hands?|not visible|no visible)/i.test(t) || /hands? (is|are) (not visible|out of|below|hidden)/i.test(t)) return '';
+    // "no extra fingers", "not fused" are good news, not problems.
+    let cleaned = t.replace(new RegExp('\\b(no|not|without|zero|never)\\s+(\\w+\\s+)?' + INSP_BAD_WORDS + '\\b', 'gi'), '');
+    let re = /(\d+)\s*(?:visible\s*)?(?:digits?|fingers?)(?![^.;,]{0,14}thumb)/gi, m;
+    while((m = re.exec(cleaned))) {
+      let n = parseInt(m[1], 10);
+      if(n !== 5) return 'hand with ' + n + ' fingers';
+    }
+    let w = cleaned.match(new RegExp('\\b' + INSP_BAD_WORDS + '\\b', 'i'));
+    return w ? 'malformed hand (' + w[1].toLowerCase() + ')' : '';
+  }
+
+  // FACE / OTHER lines: anything other than "ok"-like text is a problem.
+  function inspLineProblem(line, label) {
+    let t = String(line || '').trim().replace(/[."']/g, '').toLowerCase();
+    if(!t || /^(ok|okay|fine|good|normal|none|none visible|no problems?|no issues?)\b/.test(t)) return '';
+    return label + ': ' + String(line).trim().slice(0, 80);
+  }
+
   // Vision judge. The negative prompt is the checklist of unwanted traits;
   // the anatomy rubric is always on. Never throws: returns {error} on failure.
   async function inspCritique(dataUrl, negative, prompt) {
@@ -74,18 +130,34 @@
       + (neg ? '1. It must NOT show any of these unwanted traits: ' + neg + '.\n' : '')
       + '2. Any visible human or creature anatomy must look right: hands and fingers (count, shape, fusion), face (symmetric eyes, nose, mouth, ears), neck, shoulders, arms and legs. Parts below or outside the frame edge are NOT defects — never penalize what you cannot see — but a head or face cut off by the frame edge IS a defect.\n'
       + (brief ? '3. It should reasonably match what was requested: ' + brief + '\n' : '')
-      + 'Reply in exactly this format:\nSCORE: <integer 0-10, 10 means flawless and none of the unwanted traits visible>\nDEFECTS: <short list, or the words none visible>';
+      + 'Be strict: AI painters very often draw hands wrong. Before scoring, inspect every visible hand one finger at a time.\n'
+      + 'Reply in exactly this format:\n'
+      + 'HANDS: <for EACH visible hand: "left/right hand: N digits (thumb included), normal" or the problem, e.g. "6 digits", "two fingers fused", "finger too long", "bent wrong"; or "none visible">\n'
+      + 'FACE: <ok, or the problem>\n'
+      + 'OTHER: <ok, or any other anatomy problem or unwanted trait found>\n'
+      + 'SCORE: <integer 0-10; 10 only if flawless; at most 5 if any hand does not have exactly 5 digits or has fused/merged/distorted fingers; at most 4 if two or more problems>\n'
+      + 'DEFECTS: <short list of every problem found, or the words none visible>';
     let lastErr = null;
     for(let tryNo = 0; tryNo < 2; tryNo++) {
       try {
         if(typeof root === 'undefined' || !root.aiTextPlugin) throw new Error('aiTextPlugin is not available');
         let blob = await (await fetch(dataUrl)).blob();
-        let res = await inspTimeout(root.aiTextPlugin({ instruction: [instruction, blob], startWith: 'SCORE:' }), INSP_JUDGE_TIMEOUT_MS, 'Inspection timed out.');
+        let res = await inspTimeout(root.aiTextPlugin({ instruction: [instruction, blob], startWith: 'HANDS:' }), INSP_JUDGE_TIMEOUT_MS, 'Inspection timed out.');
         let text = String(res && res.text != null ? res.text : res);
-        let m = text.match(/SCORE:\s*(\d{1,2})/) || text.match(/^\s*(\d{1,2})\b/);
+        let m = text.match(/SCORE:\s*(\d{1,2})/);
         if(!m) throw new Error('Unreadable inspector reply: ' + text.slice(0, 80));
         let d = text.match(/DEFECTS:\s*([^\n]+)/);
-        return { score: Math.max(0, Math.min(10, parseInt(m[1], 10))), defects: d ? d[1].trim().slice(0, 240) : '' };
+        let score = Math.max(0, Math.min(10, parseInt(m[1], 10)));
+        let defects = d ? d[1].trim().slice(0, 240) : '';
+        // Do not trust the number alone: enforce what the judge itself wrote about the hands/face.
+        let handsLine = (text.match(/^\s*([^\n]*)/) || [, ''])[1];
+        let problems = [inspHandsProblem(handsLine), inspLineProblem((text.match(/FACE:\s*([^\n]+)/) || [, ''])[1], 'face'),
+          inspLineProblem((text.match(/OTHER:\s*([^\n]+)/) || [, ''])[1], 'other')].filter(Boolean);
+        if(problems.length) {
+          score = Math.min(score, problems.length > 1 ? 4 : 5);
+          if(inspIsClean(defects)) defects = problems.join('; ');
+        }
+        return { score: score, defects: defects.slice(0, 240) };
       } catch(e) {
         lastErr = e;
         console.error('image inspector:', e);
@@ -265,9 +337,19 @@
       }
       a.score = verdict.score;
       a.defects = verdict.defects;
-      a.status = a.score >= INSP_ACCEPT_SCORE ? 'accepted' : 'rejected';
+      if(a.score >= INSP_ACCEPT_SCORE && inspIsClean(a.defects)) {
+        inspUpdateStrip(ctn, run, 'Try ' + n + '/' + passes + ' · checking hands…', inspFrac(n, passes, 'judge'));
+        let handsProblem = await inspHandsCheck(a.dataUrl);
+        if(!live()) return;
+        if(handsProblem) { a.score = Math.min(a.score, 5); a.defects = handsProblem; }
+        a.ms = Date.now() - a.startedAt;
+      }
+      // The judge sometimes scores 8 while still listing defects ("bad hands…"); a try is only
+      // accepted when the score is high enough AND no defects are listed.
+      a.clean = inspIsClean(a.defects);
+      a.status = (a.score >= INSP_ACCEPT_SCORE && a.clean) ? 'accepted' : 'rejected';
       let prev = bestIdx >= 0 ? run.attempts[bestIdx] : null;
-      let isBest = !prev || typeof prev.score !== 'number' || a.score > prev.score;
+      let isBest = !prev || typeof prev.score !== 'number' || inspRank(a) > inspRank(prev);
       a.thumb = await inspThumb(a.dataUrl);
       if(!live()) return;
       if(isBest) {

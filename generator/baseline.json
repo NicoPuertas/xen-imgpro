@@ -1,9 +1,9 @@
 {
-"manifest.json": "62fa43c378facb818d34e45e5630aef6e692566045f48b5b6ab35c8aeff5b325",
-"model.txt": "6eddd40e3aba73a4d6163deee70eb88f6f7c5e5c4db53928568c2d90c363da90",
-"output-template.html": "31e24ace40149205b29755f9341cd878b856c2a869d1763c854e30d391ec383e",
-"src/README.md": "73714080c39b8fa1ae60a55743fd9b5a5520fc6b0dcefcdf2fc6c99f915f5fef",
-"src/defaults.json": "627586370bc67eda7dbe0525e267d650c8bc80b2d59665b93e6f65c519a87b23",
+"manifest.json": "9c7031ac8e72da81a86f2db0f34cd1f3cabe1f1d0223b88a2ebddceced7b6573",
+"model.txt": "76e0b9009c1a4b3391c06d985b09f33bc483eb727c7d8d34d41265689374a572",
+"output-template.html": "1bbdb443800f11db65a4639d127d0ae202a445562040e78abcd09f2acfccc4c2",
+"src/README.md": "48a6c8eb9be22ca3066bb2b1d45dfd6d6573520095ef69415822bd7f22c45627",
+"src/defaults.json": "55f47763571e6e038c2ca719ff639cdfb6496bfe2feb281b9d85d7292292a5ec",
 "src/docs/AUDIT_PLAN.md": "d199c2fd6d1e07998a63686f5d75bea0ec6675f84fc4ccdedd388e13a95dc9ea",
 "src/lib/core/framework-adapter.js": "e2cab0fbfdf17897c8d4601f07188ccd03e5aaf1fdc645b701f4671422a4d37c",
 "src/lib/core/observer.js": "61a7ede0aac959269ef4d120ce07d639dd88971334ee290c5b40f6ed861c1de2",
@@ -15,7 +15,9 @@
 "src/lib/gallery/gallery-seed-bar.js": "4b577ef1c4d24ab71eaddd1eb8a2bcd55aa6c162faa9ebd87b514c11c7003b4c",
 "src/lib/gallery/gallery-upscale.js": "7a49ffcd1c87bdd7e5126242dd4f3e8ddff86dfaa1b9ab3f5fdaeb8104644849",
 "src/lib/gallery/upscale-info-fix.js": "c043a476406762ddda73afa121a3dbf2af4e7404037319e50fbeff9c068317da",
-"src/lib/modals/modal.js": "139d939d306885760a48b7444607c796f02e9cc5a7bdef42094fbdd70ece6098",
+"src/lib/inspector/attempts-modal.js": "3c5fabff664954e5a10f968869f30cfc4eeb0c4ce259492bcdf0b7b9600d459e",
+"src/lib/inspector/passes.js": "ae1654cfa83db19964396b7dac8311f4fa31ebe2a3ce81071548ab905cbd51e5",
+"src/lib/modals/modal.js": "fc7c225fcffbd55537982901f6f59ee64a833805eea20042dd1dfb179060df46",
 "src/lib/modals/style-compare.js": "936a7c36abb0361aab24ca1d9d387e9ce4cbd44699509541f380a840d04f73c5",
 "src/lib/modals/vary-modal.js": "2b6fb7dc6abfbc16e420a5943e369376c87b014e95da37b87fc6c745bd907d47",
 "src/lib/prompt/migrate-steps.js": "f24ed1fc1be5689cc03f6d8bc55e3277e0ce97d29a83e97d9eafa7ec39a2a2c2",
@@ -28,5 +30,5 @@
 "src/lib/ui/scroll-fix.js": "b508b00f115ef9830d60683270e8e6d2a6c9708b4f7de1872393ec19c2990c1b",
 "src/lib/ui/social-visibility.js": "97c51185bdd29f82ed47b23099b43cd8ce7ee1fc1db320c353c462a1d9bdb3f0",
 "src/lib/ui/top-button.js": "d57cc3b1d2f7727e76a366082f85f82cb4a3fb69710a0897b60fe46d31359b38",
-"src/styles.css": "d44f494224b8dcb41761f1bcde61a55533cb028a216d4397ee30ba8ee8a260b2"
+"src/styles.css": "4d13b582666467c5ca0fa08e035806de543cd2aefc86312305c7c0564b587939"
 }
