@@ -212,3 +212,4 @@ One entry per upload to Perchance (newest first). `tools/make_upload.py` refuses
 
 - 2026-10-25 UTC — AI image inspector: "Retries" dropdown (1-10, same seed), vision-model scoring, per-frame attempts viewer (`lib/inspector/`).
 - 2026-10-25 UTC — Inspector: stricter judging. The judge now lists every hand and its digit count first; code overrides the score when it reports a wrong count or fused/extra fingers; a try is accepted only with score >= 8 AND no listed defects; accepted candidates get a hands-only second opinion.
+- 2026-10-25 UTC — Inspector: hand-severity ranking (correct hands > wrong finger count > malformed hands) decides the kept try when none is accepted; retries add a gentle, escalating hand-boost wording to the prompt/negative prompt (max level 3, weights <= 1.2) while the same seed is kept; the viewer shows each try's hand verdict and boost level; hidden retry iframes are removed 2 s after finishing to avoid embed AbortErrors.

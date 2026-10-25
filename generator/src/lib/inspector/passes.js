@@ -74,9 +74,10 @@
     return d === '' || /^(none|no defects?|nothing)( visible| found| detected)?$/.test(d);
   }
 
-  // Ordering of tries: score first, a defect-free verdict breaks ties.
+  // Ordering of tries. Hand severity comes first (0 correct > 1 wrong finger count only > 2 malformed:
+  // fused / blobby / sausage-like / distorted), then the score, then a defect-free verdict.
   function inspRank(a) {
-    return a.score * 2 + (a.clean ? 1 : 0);
+    return (2 - (a.handTier || 0)) * 100 + a.score * 2 + (a.clean ? 1 : 0);
   }
 
   function inspThumb(dataUrl) {
@@ -97,7 +98,53 @@
     });
   }
 
-  var INSP_BAD_WORDS = '(extra|six|seven|eight|fused|merged|webbed|missing|malformed|deformed|distorted|mangled|twisted|blob|claw|stump|too long|too short|too many|too few|wrong|unnatural|impossible|asymmetric|melted)';
+  // Wrong NUMBER of fingers (tier 1) vs wrong SHAPE of fingers (tier 2).
+  var INSP_COUNT_WORDS = 'extra|additional|duplicate|six|seven|eight|missing|too many|too few|fewer';
+  var INSP_SHAPE_WORDS = 'fused|merged|webbed|malformed|deformed|distorted|mangled|twisted|blob|blobby|blob-like|claw|stump|stubby|swollen|sausage|sausage-like|melted|unnatural|impossible|asymmetric|too long|too short|wrong|bent|not clearly separated';
+  var INSP_BAD_WORDS = '(' + INSP_COUNT_WORDS + '|' + INSP_SHAPE_WORDS + '|abnormal|not normal)';
+
+  // Severity of the hand problems described in some text: 0 none, 1 only the finger count is wrong,
+  // 2 malformed hands. Only the clauses that talk about hands/fingers count.
+  function inspHandTier() {
+    let text = Array.prototype.slice.call(arguments).join(';');
+    let tier = 0;
+    for(let clause of text.split(/[;\n]/)) {
+      let ctx = false; // inside a hand description: "left hand: 6 digits, merged/blob-like"
+      for(let item of clause.split(',')) {
+        if(/hand|finger|digit|thumb|knuckle|palm/i.test(item)) ctx = true;
+        else if(/face|eye|nose|mouth|ear|neck|leg|foot|feet|torso|body|hair|shoulder|\barm|background|dress|cloth/i.test(item)) ctx = false;
+        if(!ctx) continue;
+        let t = item.replace(new RegExp('\\b(no|not|without|zero|never)\\s+(\\w+\\s+)?' + INSP_BAD_WORDS + '\\b', 'gi'), '');
+        if(new RegExp('\\b(' + INSP_SHAPE_WORDS + ')\\b', 'i').test(t)) return 2;
+        let re = /(\d+)\s*(?:visible\s*)?(?:digits?|fingers?)(?![^.;,]{0,14}thumb)/gi, m;
+        while((m = re.exec(t))) { if(parseInt(m[1], 10) !== 5) tier = Math.max(tier, 1); }
+        if(new RegExp('\\b(' + INSP_COUNT_WORDS + '|abnormal|not normal)\\b', 'i').test(t)) tier = Math.max(tier, 1);
+      }
+    }
+    return tier;
+  }
+
+  // Hand-boost prompt wording for retries, escalating with the number of earlier tries whose hands failed.
+  // Kept gentle on purpose (weights <= 1.2, a few words): the same seed is reused, and a heavy prompt change
+  // would repaint the whole picture instead of fixing the hands.
+  var INSP_HAND_BOOST = [
+    null,
+    { pos: 'detailed hands, five fingers on each hand', neg: 'extra fingers, fused fingers' },
+    { pos: '(detailed hands:1.1), (five fingers on each hand:1.1), natural relaxed hand pose', neg: 'extra fingers, fused fingers, six fingers, malformed hands, mutated hands' },
+    { pos: '(perfect hands:1.2), (anatomically correct hands, five fingers on each hand:1.2), simple relaxed hands', neg: 'extra fingers, fused fingers, six fingers, malformed hands, mutated hands, deformed hands, extra digits, poorly drawn hands' }
+  ];
+
+  // {prompt, negative} for a hand-boost level (0 = unchanged). Negative terms already present are not repeated.
+  function inspBoostPrompts(level, prompt, negative) {
+    let b = INSP_HAND_BOOST[Math.max(0, Math.min(INSP_HAND_BOOST.length - 1, level))];
+    if(!b) return null;
+    let have = String(negative || '').toLowerCase();
+    let extra = b.neg.split(',').map(x => x.trim()).filter(x => x && have.indexOf(x.toLowerCase()) < 0);
+    return {
+      prompt: String(prompt || '').replace(/[,\s]+$/, '') + ', ' + b.pos,
+      negative: String(negative || '') + (extra.length ? (negative ? ', ' : '') + extra.join(', ') : '')
+    };
+  }
 
   // Problem text found in the judge's HANDS line (digit counts other than 5, or bad words), or ''.
   function inspHandsProblem(line) {
@@ -130,7 +177,7 @@
       + (neg ? '1. It must NOT show any of these unwanted traits: ' + neg + '.\n' : '')
       + '2. Any visible human or creature anatomy must look right: hands and fingers (count, shape, fusion), face (symmetric eyes, nose, mouth, ears), neck, shoulders, arms and legs. Parts below or outside the frame edge are NOT defects — never penalize what you cannot see — but a head or face cut off by the frame edge IS a defect.\n'
       + (brief ? '3. It should reasonably match what was requested: ' + brief + '\n' : '')
-      + 'Be strict: AI painters very often draw hands wrong. Before scoring, inspect every visible hand one finger at a time.\n'
+      + 'Be strict: AI painters very often draw hands wrong. Before scoring, inspect every visible hand one finger at a time. Also say when fingers are not clearly separated (sausage-like, blobby, stubby, fused) or oddly long/bent.\n'
       + 'Reply in exactly this format:\n'
       + 'HANDS: <for EACH visible hand: "left/right hand: N digits (thumb included), normal" or the problem, e.g. "6 digits", "two fingers fused", "finger too long", "bent wrong"; or "none visible">\n'
       + 'FACE: <ok, or the problem>\n'
@@ -157,7 +204,7 @@
           score = Math.min(score, problems.length > 1 ? 4 : 5);
           if(inspIsClean(defects)) defects = problems.join('; ');
         }
-        return { score: score, defects: defects.slice(0, 240) };
+        return { score: score, defects: defects.slice(0, 240), hands: handsLine };
       } catch(e) {
         lastErr = e;
         console.error('image inspector:', e);
@@ -168,9 +215,10 @@
 
   // One extra generation with the given params in a hidden (but in-viewport,
   // so the embed is not throttled) iframe. Resolves {dataUrl, seedUsed}.
-  function inspGenerate(base, seed) {
+  function inspGenerate(base, seed, tweak) {
     return new Promise((resolve, reject) => {
       let d = JSON.parse(JSON.stringify(base));
+      if(tweak) { d.prompt = tweak.prompt; d.negativePrompt = tweak.negative; }
       d.seed = seed;
       d.requestId = Math.random().toString();
       d.iframeId = 'inspAttempt' + Math.random().toString().replace('.', '');
@@ -180,15 +228,16 @@
       ifr.style.cssText = iframeSizeFor(d.resolution);
       holder.appendChild(ifr);
       let timer = null;
-      let done = function() {
+      // On success keep the iframe alive a moment after `finished`: removing it mid-download made the embed log AbortErrors.
+      let done = function(lingerMs) {
         clearTimeout(timer);
         window.removeEventListener('message', onMsg);
-        holder.remove();
+        if(lingerMs) setTimeout(() => holder.remove(), lingerMs); else holder.remove();
       };
       function onMsg(event) {
         let m = event.data;
         if(!m || m.type !== 'finished' || m.id !== d.iframeId) return;
-        done();
+        done(2000);
         if(!m.dataUrl) reject(new Error('Empty image'));
         else resolve({ dataUrl: m.dataUrl, seedUsed: m.seedUsed });
       }
@@ -266,6 +315,8 @@
       wrap.appendChild(img);
       let out = ifr.textToImagePluginOutput;
       let inputs = (out && out.inputs) || { prompt: run.prompt, negativePrompt: run.negative, seed: run.seed, guidanceScale: run.base.guidanceScale };
+      // A retry painted with the hand-boost wording is saved with the prompt that actually made it.
+      if(win.promptUsed) inputs = Object.assign({}, inputs, { prompt: win.promptUsed, negativePrompt: win.negativeUsed });
       if(out) out.dataUrl = win.dataUrl; else ifr.textToImagePluginOutput = { dataUrl: win.dataUrl, inputs: inputs };
       let saveBtn = makeSaveButton(async () => { await saveToGalleryWithFly(win.dataUrl, inputs, wrap); });
       saveBtn.style.opacity = '0.4';
@@ -313,7 +364,13 @@
       inspNotify(run);
       try {
         if(n === 1) a.dataUrl = first.dataUrl;
-        else a.dataUrl = (await inspGenerate(base, seed)).dataUrl;
+        else {
+          // Every earlier try whose hands were wrong raises the hand-boost level by one (max 3).
+          let level = run.attempts.filter(x => x !== a && (x.handTier || 0) > 0).length;
+          let tweak = inspBoostPrompts(level, base.prompt, negative);
+          if(tweak) { a.boost = Math.min(level, INSP_HAND_BOOST.length - 1); a.promptUsed = tweak.prompt; a.negativeUsed = tweak.negative; }
+          a.dataUrl = (await inspGenerate(base, seed, tweak)).dataUrl;
+        }
       } catch(e) {
         a.status = 'failed';
         a.error = String(e && e.message || e);
@@ -341,13 +398,14 @@
         inspUpdateStrip(ctn, run, 'Try ' + n + '/' + passes + ' · checking hands…', inspFrac(n, passes, 'judge'));
         let handsProblem = await inspHandsCheck(a.dataUrl);
         if(!live()) return;
-        if(handsProblem) { a.score = Math.min(a.score, 5); a.defects = handsProblem; }
+        if(handsProblem) { a.score = Math.min(a.score, 5); a.defects = handsProblem; a.handTier = Math.max(1, inspHandTier(handsProblem)); }
         a.ms = Date.now() - a.startedAt;
       }
       // The judge sometimes scores 8 while still listing defects ("bad hands…"); a try is only
       // accepted when the score is high enough AND no defects are listed.
       a.clean = inspIsClean(a.defects);
-      a.status = (a.score >= INSP_ACCEPT_SCORE && a.clean) ? 'accepted' : 'rejected';
+      a.handTier = inspHandTier(verdict.hands, a.defects);
+      a.status = (a.score >= INSP_ACCEPT_SCORE && a.clean && a.handTier === 0) ? 'accepted' : 'rejected';
       let prev = bestIdx >= 0 ? run.attempts[bestIdx] : null;
       let isBest = !prev || typeof prev.score !== 'number' || inspRank(a) > inspRank(prev);
       a.thumb = await inspThumb(a.dataUrl);

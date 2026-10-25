@@ -31,8 +31,8 @@ function sandbox({ scores, hands }) {
   ctx.window.input = { passes: "5" };
   vm.createContext(ctx);
   vm.runInContext(src.replace("function inspGenerate(", "function __orig(") + `
-    var __gens = []; function inspGenerate(base, seed) { __gens.push(seed); return Promise.resolve({ dataUrl: "data:image/png;base64,G" + __gens.length }); }
-    window.__run = inspRun; window.__gens = __gens;`, ctx);
+    var __gens = [], __tweaks = []; function inspGenerate(base, seed, tweak) { __gens.push(seed); __tweaks.push(tweak || null); return Promise.resolve({ dataUrl: "data:image/png;base64,G" + __gens.length }); }
+    window.__run = inspRun; window.__gens = __gens; window.__tweaks = __tweaks;`, ctx);
   return { ctx, ctn };
 }
 
@@ -94,4 +94,59 @@ test("hand text parsing", () => {
   assert.equal(p("no extra fingers, not fused, 5 digits"), "");
   assert.match(p("right hand: 6 digits"), /6 fingers/);
   assert.match(p("two fingers fused"), /fused/);
+});
+
+const iframeStub = () => (q) => (q === "iframe" ? { parentElement: null, style: {}, offsetWidth: 1, offsetLeft: 0 } : null);
+
+test("when nothing is accepted: correct hands > extra finger > malformed hands, regardless of score", async () => {
+  const { ctx, ctn } = sandbox({ scores: [
+    "5|left hand fused|left hand: 5 digits, fused sausage-like fingers",   // malformed, score 5
+    "4|extra finger on right hand|right hand: 6 digits",                   // count only, score 4
+    "6|extra digits and distorted anatomy|left hand: 6 digits, distorted",  // malformed, score 6
+  ] });
+  ctn.querySelector = iframeStub();
+  await ctx.window.__run(ctn, { dataUrl: "data:image/png;base64,F", seedUsed: 9 }, 3);
+  const a = ctn.__inspRun.attempts;
+  assert.equal(a.map((x) => x.handTier).join(), "2,1,2");
+  assert.equal(ctn.__inspRun.winner, 1);
+});
+
+test("a try with correct hands beats a higher-scored try with extra fingers", async () => {
+  const { ctx, ctn } = sandbox({ scores: ["7|extra finger|right hand: 6 digits", "6|slightly soft|left hand: 5 digits, normal"] });
+  ctn.querySelector = iframeStub();
+  await ctx.window.__run(ctn, { dataUrl: "data:image/png;base64,F", seedUsed: 9 }, 2);
+  assert.equal(ctn.__inspRun.winner, 1);
+});
+
+test("hand boost escalates after failed hands and never touches try 1", async () => {
+  const { ctx, ctn } = sandbox({ scores: ["4|extra finger|right hand: 6 digits", "4|extra finger|left hand: 6 digits", "4|extra finger|left hand: 6 digits", "4|extra finger|left hand: 6 digits", "4|extra finger|left hand: 6 digits"] });
+  ctn.querySelector = iframeStub();
+  await ctx.window.__run(ctn, { dataUrl: "data:image/png;base64,F", seedUsed: 9 }, 5);
+  const t = ctx.window.__tweaks;
+  assert.equal(t.length, 4);
+  assert.ok(/five fingers/.test(t[0].prompt) && !/\(/.test(t[0].prompt.split("five fingers")[0].slice(-3)));
+  assert.ok(/perfect hands:1\.2/.test(t[2].prompt), t[2].prompt);
+  assert.ok(/perfect hands:1\.2/.test(t[3].prompt), "capped at level 3");
+  assert.equal(ctn.__inspRun.attempts[0].boost, undefined);
+  assert.equal(ctn.__inspRun.attempts[3].boost, 3);
+  assert.ok(!/\b1\.[3-9]/.test(t[3].prompt), "weights stay <= 1.2");
+});
+
+test("no hand boost when the hands were fine", async () => {
+  const { ctx, ctn } = sandbox({ scores: ["6|soft focus", "6|soft focus"] });
+  ctn.querySelector = iframeStub();
+  await ctx.window.__run(ctn, { dataUrl: "data:image/png;base64,F", seedUsed: 9 }, 2);
+  assert.equal(ctx.window.__tweaks[0], null);
+});
+
+test("hand tier parsing", () => {
+  const { ctx } = sandbox({ scores: [] });
+  const t = (...x) => ctx.inspHandTier(...x);
+  assert.equal(t("left hand: 5 digits, normal", "none visible"), 0);
+  assert.equal(t("left hand: 4 digits (thumb hidden), normal"), 0);
+  assert.equal(t("right hand: 6 digits"), 1);
+  assert.equal(t("left hand: 6 digits, abnormal", "extra finger on left hand"), 1);
+  assert.equal(t("left hand: 6 digits, merged/blob-like"), 2);
+  assert.equal(t("a", "left hand has extra digits and distorted anatomy"), 2);
+  assert.equal(t("left hand: 5 digits, normal", "distorted face"), 0);
 });

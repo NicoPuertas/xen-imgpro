@@ -59,6 +59,20 @@
     if(a.error) body.textContent = a.error;
     else if(typeof a.score === 'number') body.textContent = 'Defects: ' + (a.defects || 'none visible');
     card.appendChild(body);
+    if(typeof a.score === 'number') {
+      let tierLabel = ['Hands: no problem found', 'Hands: wrong finger count', 'Hands: malformed'][a.handTier || 0];
+      let tierEl = document.createElement('div');
+      tierEl.textContent = tierLabel;
+      tierEl.style.cssText = 'font-size:0.75rem;color:' + ['#2bbb00', '#e0a800', '#d9534f'][a.handTier || 0] + ';';
+      card.appendChild(tierEl);
+    }
+    if(a.boost) {
+      let boostEl = document.createElement('div');
+      boostEl.textContent = '\u270D Hand-boost prompt, level ' + a.boost;
+      boostEl.title = a.promptUsed || '';
+      boostEl.style.cssText = 'font-size:0.72rem;opacity:0.7;';
+      card.appendChild(boostEl);
+    }
     let meta = document.createElement('div');
     meta.style.cssText = 'opacity:0.55;font-size:0.72rem;';
     meta.textContent = 'seed ' + a.seed + (a.ms ? ' · ' + Math.round(a.ms / 1000) + 's' : '');
@@ -90,7 +104,7 @@
         : run.attempts.length + ' of up to ' + run.max + ' tries'
           + (run.stoppedEarly ? ' (stopped early: a try was accepted)' : '')
           + (kept ? ' · kept try ' + kept.n : '') + '.';
-      sum.textContent = line + ' Accepted means a score of ' + run.accept + '/10 or more.' + (run.note ? ' ' + run.note : '');
+      sum.textContent = line + ' Accepted means a score of ' + run.accept + '/10 or more with correct hands. When none is accepted, the best hands win: correct > wrong finger count > malformed.' + (run.note ? ' ' + run.note : '');
       imgCtn.appendChild(sum);
       let neg = document.createElement('div');
       neg.style.cssText = 'flex-basis:100%;color:#999;font-family:sans-serif;font-size:0.75rem;text-align:center;max-height:3.2em;overflow:hidden;';
